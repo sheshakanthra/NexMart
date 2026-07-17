@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, Upload, ArrowLeft } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { CATEGORIES } from '../../data/mock';
 import { uid } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import * as productService from '../../services/productService';
+import * as storageService from '../../services/storageService';
 
 export default function AddProduct() {
   const { state, dispatch, toast } = useApp();
@@ -12,6 +15,8 @@ export default function AddProduct() {
   const [form, setForm] = useState({ name: '', description: '', category: 'staples', price: '', unit: '1 kg', stock: '', threshold: '5', img: '' });
   const [errors, setErrors] = useState({});
   const [preview, setPreview] = useState('');
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef(null); // holds the actual File object for upload
 
   const genAi = () => {
     if (!form.name) { toast({ title: 'Add a product name first', kind: 'error' }); return; }
@@ -22,8 +27,9 @@ export default function AddProduct() {
 
   const onFile = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
+    fileRef.current = f;
     const reader = new FileReader();
-    reader.onload = () => { setPreview(reader.result); setForm(x => ({ ...x, img: reader.result })); };
+    reader.onload = () => setPreview(reader.result);
     reader.readAsDataURL(f);
   };
 
@@ -35,27 +41,64 @@ export default function AddProduct() {
     setErrors(e); return Object.keys(e).length === 0;
   };
 
-  const save = (e) => {
+  const save = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    const product = {
-      id: uid('p'),
-      storeId,
-      name: form.name.trim(),
-      category: form.category,
-      price: +form.price,
-      unit: form.unit,
-      stock: +form.stock,
-      threshold: +form.threshold || 5,
-      description: form.description || `${form.name}`,
-      img: form.img || 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&h=400&fit=crop',
-      trend: [10, 12, 15, 14, 18, 22, 20],
-      soldToday: 0,
-      active: true,
-    };
-    dispatch({ type: 'ADD_PRODUCT', payload: { storeId, product }});
-    toast({ title: 'Product added', body: product.name, kind: 'success' });
-    nav('/vendor/inventory');
+    setSaving(true);
+
+    try {
+      let productToAdd;
+
+      if (supabase) {
+        // Upload image if a file was selected
+        let imgUrl = form.img;
+        if (fileRef.current) {
+          const uploadRes = await storageService.uploadProductImage(storeId, fileRef.current);
+          if (uploadRes?.success) imgUrl = uploadRes.data;
+        }
+
+        const res = await productService.createProduct(storeId, {
+          name:        form.name.trim(),
+          category:    form.category,
+          price:       +form.price,
+          unit:        form.unit,
+          stock:       +form.stock,
+          threshold:   +form.threshold || 5,
+          description: form.description || form.name.trim(),
+          img:         imgUrl || 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&h=400&fit=crop',
+          trend:       [10,12,15,14,18,22,20],
+          soldToday:   0,
+          active:      true,
+        });
+
+        if (!res?.success) throw new Error(res?.error?.message || 'Failed to save product');
+        productToAdd = res.data;
+      } else {
+        // Demo mode — local only
+        productToAdd = {
+          id:          uid('p'),
+          storeId,
+          name:        form.name.trim(),
+          category:    form.category,
+          price:       +form.price,
+          unit:        form.unit,
+          stock:       +form.stock,
+          threshold:   +form.threshold || 5,
+          description: form.description || form.name.trim(),
+          img:         preview || 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&h=400&fit=crop',
+          trend:       [10,12,15,14,18,22,20],
+          soldToday:   0,
+          active:      true,
+        };
+      }
+
+      dispatch({ type: 'ADD_PRODUCT', payload: { storeId, product: productToAdd } });
+      toast({ title: 'Product added', body: productToAdd.name, kind: 'success' });
+      nav('/vendor/inventory');
+    } catch (err) {
+      toast({ title: 'Failed to save product', body: err.message, kind: 'error' });
+      setSaving(false);
+    }
   };
 
   return (
@@ -106,8 +149,10 @@ export default function AddProduct() {
         </div>
 
         <div className="flex items-center gap-2 justify-end">
-          <button type="button" onClick={() => nav(-1)} className="btn btn-ghost">Cancel</button>
-          <button type="submit" className="btn btn-primary" data-testid="ap-save">Save product</button>
+          <button type="button" onClick={() => nav(-1)} className="btn btn-ghost" disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" data-testid="ap-save" disabled={saving}>
+            {saving ? 'Saving…' : 'Save product'}
+          </button>
         </div>
       </form>
     </div>

@@ -1,27 +1,61 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Trash2, PowerOff } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { EmptyState } from '../../components/States';
 import { Modal } from '../../components/Modal';
 import { CATEGORIES } from '../../data/mock';
+import { supabase } from '../../lib/supabase';
+import * as productService from '../../services/productService';
 
 export default function EditProduct() {
   const { productId } = useParams();
   const { state, dispatch, toast } = useApp();
   const nav = useNavigate();
   const storeId = state.session?.storeId || 's_0';
-  const store = state.stores.find(s => s.id === storeId);
+  const store = state.stores.find(s => s.id === storeId) || state.stores[0];
   const product = store?.products.find(p => p.id === productId);
   const [form, setForm] = useState(product ? { ...product } : null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!product || !form) return <EmptyState title="Product not found" action={<button onClick={() => nav('/vendor/inventory')} className="btn btn-primary">Back to inventory</button>}/>;
 
-  const save = (e) => {
+  const save = async (e) => {
     e.preventDefault();
-    dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId, productId, patch: form } });
+    setSaving(true);
+    // Optimistic dispatch
+    dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId: store.id, productId, patch: form } });
     toast({ title: 'Product updated', kind: 'success' });
+    nav('/vendor/inventory');
+
+    // Background Supabase persist
+    if (supabase) {
+      productService.updateProduct(productId, form).catch(err =>
+        console.error('[NexMart] EditProduct sync failed', err)
+      );
+    }
+  };
+
+  const doToggle = () => {
+    const newActive = !product.active;
+    dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId: store.id, productId, patch: { active: newActive } } });
+    toast({ title: newActive ? 'Activated' : 'Deactivated', kind: 'success' });
+    if (supabase) {
+      productService.updateProduct(productId, { active: newActive }).catch(err =>
+        console.error('[NexMart] Toggle sync failed', err)
+      );
+    }
+  };
+
+  const doDelete = () => {
+    dispatch({ type: 'DELETE_PRODUCT', payload: { storeId: store.id, productId } });
+    toast({ title: 'Product deleted', kind: 'success' });
+    if (supabase) {
+      productService.deleteProduct(productId).catch(err =>
+        console.error('[NexMart] Delete sync failed', err)
+      );
+    }
     nav('/vendor/inventory');
   };
 
@@ -51,8 +85,10 @@ export default function EditProduct() {
           <div><label className="label-mono block mb-1">Threshold</label><input type="number" value={form.threshold} onChange={e => setForm(f => ({...f, threshold: +e.target.value}))} className="input" data-testid="ep-threshold"/></div>
         </div>
         <div className="flex items-center gap-2 justify-end">
-          <button type="button" onClick={() => nav(-1)} className="btn btn-ghost">Cancel</button>
-          <button type="submit" className="btn btn-primary" data-testid="ep-save">Save changes</button>
+          <button type="button" onClick={() => nav(-1)} className="btn btn-ghost" disabled={saving}>Cancel</button>
+          <button type="submit" className="btn btn-primary" data-testid="ep-save" disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
         </div>
       </form>
 
@@ -61,14 +97,14 @@ export default function EditProduct() {
         <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-sm">Deactivate this product to hide it from customers, or delete it permanently.</div>
           <div className="flex gap-2">
-            <button onClick={() => { dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId, productId, patch: { active: !product.active } } }); toast({ title: product.active ? 'Deactivated' : 'Activated', kind: 'success' }); }} className="btn btn-ghost" data-testid="ep-toggle"><PowerOff size={14}/>{product.active ? 'Deactivate' : 'Activate'}</button>
+            <button onClick={doToggle} className="btn btn-ghost" data-testid="ep-toggle"><PowerOff size={14}/>{product.active ? 'Deactivate' : 'Activate'}</button>
             <button onClick={() => setConfirmDel(true)} className="btn btn-ghost !text-danger" data-testid="ep-delete"><Trash2 size={14}/>Delete</button>
           </div>
         </div>
       </div>
 
       <Modal open={confirmDel} onClose={() => setConfirmDel(false)} title="Delete product?" size="sm"
-        footer={<><button onClick={() => setConfirmDel(false)} className="btn btn-ghost">Cancel</button><button onClick={() => { dispatch({ type: 'DELETE_PRODUCT', payload: { storeId, productId } }); toast({ title: 'Product deleted', kind: 'success' }); nav('/vendor/inventory'); }} className="btn btn-primary !bg-danger" data-testid="ep-confirm-del">Delete permanently</button></>}>
+        footer={<><button onClick={() => setConfirmDel(false)} className="btn btn-ghost">Cancel</button><button onClick={doDelete} className="btn btn-primary !bg-danger" data-testid="ep-confirm-del">Delete permanently</button></>}>
         <p className="text-sm text-sub">This permanently removes <b>{product.name}</b> from your inventory.</p>
       </Modal>
     </div>

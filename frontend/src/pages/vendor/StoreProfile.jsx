@@ -3,6 +3,8 @@ import { MapPin } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StatusChip } from '../../components/Chip';
 import { NEIGHBORHOODS } from '../../data/mock';
+import { supabase } from '../../lib/supabase';
+import * as storeService from '../../services/storeService';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
@@ -17,8 +19,16 @@ export default function StoreProfile() {
   });
 
   const save = () => {
-    dispatch({ type: 'UPDATE_STORE', payload: { storeId, patch: form } });
+    // Optimistic dispatch
+    dispatch({ type: 'UPDATE_STORE', payload: { storeId: store.id, patch: form } });
     toast({ title: 'Store profile updated', kind: 'success' });
+
+    // Background Supabase persist (best-effort, UI already updated)
+    if (supabase) {
+      storeService.updateStore(store.id, form).catch(err =>
+        console.error('[NexMart] StoreProfile sync failed', err)
+      );
+    }
   };
 
   return (

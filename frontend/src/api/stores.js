@@ -1,32 +1,90 @@
-// TODO Phase 2: Implement with Supabase DB (table: stores)
-// import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { ApiError, handleApiError } from '../lib/apiError';
+import { toStoreColumns } from '../lib/catalogMapper';
 
-export async function fetchStores({ neighborhood, status = 'active', page = 1, pageSize = 20 } = {}) {
-  // TODO: supabase.from('stores').select('*').eq('status', status).range(...)
-  throw new Error('Not implemented');
+function require() {
+  if (!supabase) throw new ApiError('Supabase not configured', 'NO_CLIENT', 503);
+}
+
+const STORE_WITH_PRODUCTS = '*, products(*, inventory(stock, threshold))';
+
+export async function fetchStores({ neighborhood, status = 'active' } = {}) {
+  require();
+  try {
+    let q = supabase
+      .from('stores')
+      .select(STORE_WITH_PRODUCTS)
+      .eq('status', status)
+      .is('deleted_at', null)
+      .order('rating', { ascending: false });
+
+    if (neighborhood) q = q.eq('neighborhood', neighborhood);
+
+    const { data, error } = await q;
+    if (error) throw ApiError.fromSupabase(error);
+    return data;
+  } catch (err) { handleApiError(err); }
 }
 
 export async function fetchStoreById(storeId) {
-  // TODO: supabase.from('stores').select('*, products(*)').eq('id', storeId).single()
-  throw new Error('Not implemented');
+  require();
+  try {
+    const { data, error } = await supabase
+      .from('stores')
+      .select(STORE_WITH_PRODUCTS)
+      .eq('id', storeId)
+      .single();
+    if (error) throw ApiError.fromSupabase(error);
+    return data;
+  } catch (err) { handleApiError(err); }
 }
 
 export async function fetchStoresByVendor(vendorId) {
-  // TODO: supabase.from('stores').select('*').eq('owner_id', vendorId)
-  throw new Error('Not implemented');
+  require();
+  try {
+    const { data, error } = await supabase
+      .from('stores')
+      .select(STORE_WITH_PRODUCTS)
+      .eq('owner_id', vendorId)
+      .is('deleted_at', null);
+    if (error) throw ApiError.fromSupabase(error);
+    return data;
+  } catch (err) { handleApiError(err); }
 }
 
 export async function searchStores({ query, neighborhood } = {}) {
-  // TODO: supabase.from('stores').select('*').ilike('name', `%${query}%`)
-  throw new Error('Not implemented');
+  require();
+  try {
+    let q = supabase
+      .from('stores')
+      .select('*')
+      .eq('status', 'active')
+      .is('deleted_at', null)
+      .ilike('name', `%${query}%`);
+
+    if (neighborhood) q = q.eq('neighborhood', neighborhood);
+
+    const { data, error } = await q;
+    if (error) throw ApiError.fromSupabase(error);
+    return data;
+  } catch (err) { handleApiError(err); }
 }
 
 export async function updateStore(storeId, patch) {
-  // TODO: supabase.from('stores').update(patch).eq('id', storeId).select().single()
-  throw new Error('Not implemented');
+  require();
+  try {
+    const cols = toStoreColumns(patch);
+    const { data, error } = await supabase
+      .from('stores')
+      .update(cols)
+      .eq('id', storeId)
+      .select()
+      .single();
+    if (error) throw ApiError.fromSupabase(error);
+    return data;
+  } catch (err) { handleApiError(err); }
 }
 
-export async function fetchNearbyStores({ neighborhood, radiusKm } = {}) {
-  // TODO: PostGIS query or neighborhood filter
-  throw new Error('Not implemented');
+export async function fetchNearbyStores({ neighborhood } = {}) {
+  return fetchStores({ neighborhood });
 }

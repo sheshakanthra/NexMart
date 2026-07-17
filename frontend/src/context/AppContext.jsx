@@ -2,8 +2,21 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { buildStores, buildOrders, ORDER_STAGES } from '../data/mock';
 import { uid } from '../lib/utils';
 import { supabase } from '../lib/supabase';
+import { mapStoreWithProducts } from '../lib/catalogMapper';
 
 const AppContext = createContext(null);
+
+// Safe localStorage helpers — guard against SecurityError (iOS private mode)
+// and SyntaxError (corrupted stored values). Both crash the app at module init
+// if called without a try/catch.
+function lsGet(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; }
+  catch { return fallback; }
+}
+function lsJSON(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
+  catch { return fallback; }
+}
 
 const initialStores = buildStores();
 const initialOrders = buildOrders(initialStores);
@@ -16,16 +29,16 @@ const initialState = {
   authReady: false, // true once auth state is known — guards RequireRole redirects
 
   // ── UI ──────────────────────────────────────────────────────────────────
-  theme:        localStorage.getItem('nm_theme')        || 'dark',
-  neighborhood: localStorage.getItem('nm_neighborhood') || 'T. Nagar',
+  theme:        lsGet('nm_theme',        'dark'),
+  neighborhood: lsGet('nm_neighborhood', 'T. Nagar'),
 
   // ── Customer state ──────────────────────────────────────────────────────
-  cart:      JSON.parse(localStorage.getItem('nm_cart')       || '[]'),
-  wishlist:  JSON.parse(localStorage.getItem('nm_wishlist')   || '[]'),
-  addresses: JSON.parse(localStorage.getItem('nm_addresses')  || 'null') || [
+  cart:      lsJSON('nm_cart',      []),
+  wishlist:  lsJSON('nm_wishlist',  []),
+  addresses: lsJSON('nm_addresses', null) || [
     { id: 'a1', label: 'Home', name: 'Arjun R.', phone: '+91 98400 12345', line1: '4B, Second Main Rd', line2: 'Kasturba Nagar', neighborhood: 'Adyar' },
   ],
-  profile: JSON.parse(localStorage.getItem('nm_profile') || 'null') || { name: 'Arjun R.', email: 'arjun@nexmart.demo', phone: '+91 98400 12345' },
+  profile: lsJSON('nm_profile', null) || { name: 'Arjun R.', email: 'arjun@nexmart.demo', phone: '+91 98400 12345' },
 
   // ── Mock data (replaced per-domain in future phases) ────────────────────
   stores:  initialStores,
@@ -121,6 +134,8 @@ function reducer(state, action) {
     }
 
     // ── Stores ────────────────────────────────────────────────────────────
+    case 'SET_STORES':
+      return { ...state, stores: action.payload };
     case 'UPDATE_STORE': {
       const { storeId, patch } = action.payload;
       return { ...state, stores: state.stores.map(s => s.id === storeId ? { ...s, ...patch } : s) };
@@ -193,7 +208,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!supabase) {
       // No Supabase configured — restore legacy mock session from localStorage
-      const saved = JSON.parse(localStorage.getItem('nm_session') || 'null');
+      const saved = lsJSON('nm_session', null);
       if (saved) dispatch({ type: 'SET_SESSION', payload: saved });
       dispatch({ type: 'AUTH_READY' });
       return;
@@ -236,6 +251,40 @@ export function AppProvider({ children }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Catalog loading: fetch stores+products from Supabase after auth ready ──
+  // Falls back silently to mock data (initialStores) if Supabase is absent or errors.
+  // Only loads when supabase is configured — demo (one-tap) sessions keep mock data
+  // if no env vars are set, but load real data when env vars present (anon RLS allows it).
+  useEffect(() => {
+    if (!supabase || !state.authReady) return;
+
+    let mounted = true;
+
+    async function loadCatalog() {
+      try {
+        const { data, error } = await supabase
+          .from('stores')
+          .select('*, products(*, inventory(stock, threshold))')
+          .eq('status', 'active')
+          .is('deleted_at', null)
+          .order('rating', { ascending: false });
+
+        if (error) throw error;
+        if (!mounted) return;
+
+        const mapped = (data || []).map(mapStoreWithProducts);
+        if (mapped.length > 0) {
+          dispatch({ type: 'SET_STORES', payload: mapped });
+        }
+      } catch (err) {
+        console.error('[NexMart] Catalog load failed — keeping mock data', err);
+      }
+    }
+
+    loadCatalog();
+    return () => { mounted = false; };
+  }, [state.authReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Sync logout: when session is cleared locally, sign out of Supabase ────
   // Pages dispatch SET_SESSION → null directly (Profile, VendorSettings, AdminSettings).
   // This effect detects that and mirrors it to Supabase.
@@ -257,13 +306,15 @@ export function AppProvider({ children }) {
   }, []);
 
   // ── Persist select slices to localStorage ────────────────────────────────
-  useEffect(() => { localStorage.setItem('nm_session',      JSON.stringify(state.session));   }, [state.session]);
-  useEffect(() => { localStorage.setItem('nm_cart',         JSON.stringify(state.cart));       }, [state.cart]);
-  useEffect(() => { localStorage.setItem('nm_wishlist',     JSON.stringify(state.wishlist));   }, [state.wishlist]);
-  useEffect(() => { localStorage.setItem('nm_theme',        state.theme); document.documentElement.classList.toggle('dark', state.theme === 'dark'); }, [state.theme]);
-  useEffect(() => { localStorage.setItem('nm_neighborhood', state.neighborhood);               }, [state.neighborhood]);
-  useEffect(() => { localStorage.setItem('nm_addresses',    JSON.stringify(state.addresses));  }, [state.addresses]);
-  useEffect(() => { localStorage.setItem('nm_profile',      JSON.stringify(state.profile));    }, [state.profile]);
+  // lsSet: swallows QuotaExceededError (full storage) and SecurityError (blocked storage)
+  const lsSet = (key, val) => { try { localStorage.setItem(key, val); } catch {} };
+  useEffect(() => { lsSet('nm_session',      JSON.stringify(state.session));   }, [state.session]);
+  useEffect(() => { lsSet('nm_cart',         JSON.stringify(state.cart));       }, [state.cart]);
+  useEffect(() => { lsSet('nm_wishlist',     JSON.stringify(state.wishlist));   }, [state.wishlist]);
+  useEffect(() => { lsSet('nm_theme',        state.theme); document.documentElement.classList.toggle('dark', state.theme === 'dark'); }, [state.theme]);
+  useEffect(() => { lsSet('nm_neighborhood', state.neighborhood);               }, [state.neighborhood]);
+  useEffect(() => { lsSet('nm_addresses',    JSON.stringify(state.addresses));  }, [state.addresses]);
+  useEffect(() => { lsSet('nm_profile',      JSON.stringify(state.profile));    }, [state.profile]);
 
   // ── Toast helper ─────────────────────────────────────────────────────────
   const toast = (opts) => {

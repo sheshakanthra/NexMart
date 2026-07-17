@@ -8,6 +8,9 @@ import { Modal } from '../../components/Modal';
 import { EmptyState } from '../../components/States';
 import { CATEGORIES } from '../../data/mock';
 import { inr, cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import * as productService from '../../services/productService';
+import * as inventoryService from '../../services/inventoryService';
 
 export default function Inventory() {
   const { state, dispatch, toast } = useApp();
@@ -27,15 +30,44 @@ export default function Inventory() {
   }, [store, q, cat, status]);
 
   const counts = useMemo(() => ({
-    total: store.products.length,
+    total:   store.products.length,
     inStock: store.products.filter(p => p.stock > p.threshold).length,
-    low: store.products.filter(p => p.stock > 0 && p.stock <= p.threshold).length,
-    out: store.products.filter(p => p.stock === 0).length,
+    low:     store.products.filter(p => p.stock > 0 && p.stock <= p.threshold).length,
+    out:     store.products.filter(p => p.stock === 0).length,
   }), [store]);
 
-  const setStock = (p, s) => dispatch({ type: 'UPDATE_STOCK', payload: { storeId: store.id, productId: p.id, stock: Math.max(0, s) }});
-  const toggle = (p) => { dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId: store.id, productId: p.id, patch: { active: !p.active } } }); toast({ title: p.active ? 'Product deactivated' : 'Product activated', kind: 'success' }); };
-  const del = () => { if (!delTarget) return; dispatch({ type: 'DELETE_PRODUCT', payload: { storeId: store.id, productId: delTarget.id } }); toast({ title: 'Product deleted', kind: 'success' }); setDelTarget(null); };
+  const setStock = (p, s) => {
+    const newStock = Math.max(0, s);
+    dispatch({ type: 'UPDATE_STOCK', payload: { storeId: store.id, productId: p.id, stock: newStock } });
+    if (supabase) {
+      inventoryService.updateStock(p.id, newStock).catch(err =>
+        console.error('[NexMart] Stock sync failed', err)
+      );
+    }
+  };
+
+  const toggle = (p) => {
+    const newActive = !p.active;
+    dispatch({ type: 'UPDATE_PRODUCT', payload: { storeId: store.id, productId: p.id, patch: { active: newActive } } });
+    toast({ title: newActive ? 'Product activated' : 'Product deactivated', kind: 'success' });
+    if (supabase) {
+      productService.updateProduct(p.id, { active: newActive }).catch(err =>
+        console.error('[NexMart] Toggle sync failed', err)
+      );
+    }
+  };
+
+  const del = () => {
+    if (!delTarget) return;
+    dispatch({ type: 'DELETE_PRODUCT', payload: { storeId: store.id, productId: delTarget.id } });
+    toast({ title: 'Product deleted', kind: 'success' });
+    if (supabase) {
+      productService.deleteProduct(delTarget.id).catch(err =>
+        console.error('[NexMart] Delete sync failed', err)
+      );
+    }
+    setDelTarget(null);
+  };
 
   return (
     <div className="space-y-5" data-testid="inventory-page">

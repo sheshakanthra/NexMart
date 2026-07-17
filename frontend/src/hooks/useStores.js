@@ -1,24 +1,27 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
+import { useApp } from '../context/AppContext';
 
-// TODO Phase 2: Wire to storeService.getStores()
-// data shape: Store[] — see src/data/mock.js buildStores()
-export function useStores(params) {
-  const [loading] = useState(false);
-  const [error]   = useState(null);
-  const [data]    = useState(null);
+// Returns stores from AppContext state (populated from Supabase or mock data).
+// Components should read from state.stores via these hooks rather than directly.
 
-  const refetch = () => {};
+export function useStores({ neighborhood, status } = {}) {
+  const { state } = useApp();
 
-  return { loading, error, data, refetch };
+  const data = useMemo(() => {
+    let arr = state.stores;
+    if (status)       arr = arr.filter(s => s.status === status);
+    if (neighborhood) arr = arr.filter(s => s.neighborhood === neighborhood);
+    return arr;
+  }, [state.stores, neighborhood, status]);
+
+  return { loading: !state.authReady, error: null, data };
 }
 
-// TODO Phase 2: Wire to storeService.getStoreById()
 export function useStore(storeId) {
-  const [loading] = useState(false);
-  const [error]   = useState(null);
-  const [data]    = useState(null);
-
-  const refetch = () => {};
-
-  return { loading, error, data, refetch };
+  const { state } = useApp();
+  const data = useMemo(
+    () => state.stores.find(s => s.id === storeId) || null,
+    [state.stores, storeId]
+  );
+  return { loading: !state.authReady, error: null, data };
 }
