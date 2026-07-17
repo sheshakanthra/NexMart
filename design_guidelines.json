@@ -1,0 +1,102 @@
+{
+  "brand_identity": {
+    "name": "NexMart",
+    "taglines": [
+      "Hyperlocal Commerce Operating System",
+      "The Scalable Neighborhood Marketplace"
+    ],
+    "core_identity": "Bazaar meets Command Center. The chaotic, vibrant reality of Indian grocery stores, tamed by a crisp, high-contrast, technical OS layer.",
+    "emotional_tone": "Authoritative, Trustworthy, Vibrant, Hyperlocal"
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "monospace": "JetBrains Mono"
+    },
+    "hierarchy_rules": {
+      "h1": "text-5xl lg:text-6xl tracking-tighter font-black",
+      "h2": "text-3xl lg:text-4xl tracking-tight font-bold",
+      "h3": "text-xl lg:text-2xl tracking-tight font-semibold",
+      "kpi_numbers": "font-mono tracking-tighter text-4xl lg:text-5xl font-medium",
+      "body": "text-base leading-relaxed text-muted-foreground",
+      "labels": "text-xs font-mono uppercase tracking-[0.2em]"
+    }
+  },
+  "color_system": {
+    "light_mode": {
+      "background": "#F9F9F6",
+      "surface": "#FFFFFF",
+      "primary": "#EA580C",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#FDE68A",
+      "border": "#E5E7EB",
+      "muted": "#F3F4F6",
+      "success": "#16A34A",
+      "warning": "#F59E0B",
+      "ai_accent": "#6366F1"
+    },
+    "dark_mode": {
+      "background": "#0D0F11",
+      "surface": "#16181A",
+      "primary": "#EA580C",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#27272A",
+      "border": "#272A2E",
+      "muted": "#1F2124",
+      "success": "#22C55E",
+      "warning": "#FBBF24",
+      "ai_accent": "#818CF8"
+    },
+    "usage_rules": "Avoid large flat areas of color. Use Orange (Saffron) for CTAs. Use AI Indigo ONLY for Sentinel insights/chat. Rely on stark contrast for data grids. No generic purple/white gradients."
+  },
+  "spacing_and_layout": {
+    "grid_system": "Bento Grid Protocol. High-density for Dashboards (gap-4, strict col-span logic). Wide/Asymmetric for Landing (gap-8, md:grid-cols-12).",
+    "paddings": "Use generous paddings (p-6, p-8) inside dashboard cards. Containers must have internal padding if they have borders.",
+    "radii": "Subtle roundness. max 8px (rounded-md) to retain a sharp OS feel."
+  },
+  "visual_enhancers": {
+    "surfaces": "Grid Borders for Dashboards (expose the skeleton). Crystal Glassmorphism for sticky navbars (backdrop-blur-xl bg-background/70). NEVER use 100% transparent backgrounds over content.",
+    "shadows": "Minimal. Rely on 1px borders to ground elements. Use soft drop-shadow for floating UI (Sentinel). NO neumorphism.",
+    "motion": "Framer Motion staggered entrances for lists. Number counters flip/tick smoothly."
+  },
+  "component_design_specs": {
+    "nav": "Sticky glassmorphism header. Left: NexMart logo. Center: Navigation links. Right: User profile / Role Switcher + Notification Bell.",
+    "stat_cards": "Flat background, 1px border. Top: Title (mono label). Middle: Large KPI (mono). Bottom: % change (green/red) + sparkline.",
+    "product_card": "Top: edge-to-edge image. Middle: Title + Price + Neighborhood. Bottom: Inline stock meter + Add to Cart button.",
+    "order_timeline": "Vertical stepped list. Active step pulsing green dot. Future steps grayed out.",
+    "sentinel_ai_cards": "Tracing beam border effect (linear gradient mask). Icon: sparkles. Font: slightly tinted Indigo. Differentiates it from standard OS panels.",
+    "demand_map": "Dark map background. Heatmap overlays using glowing polygons for zones (T. Nagar, Adyar).",
+    "live_ticker": "react-fast-marquee. Mono font. 'Order #4092 Placed in Velachery | Stock Alert: Atta Low in Mylapore'.",
+    "forms_and_tables": "Dense. Left-aligned text. Right-aligned numbers. Inline steppers for inventory table."
+  },
+  "page_level_direction": {
+    "landing_page": "High visual impact. Massive Typography. Live platform stat counters in the hero. 3 Role Cards built with Bento grid. Screenshot showcase using 3D perspective tilts.",
+    "customer_module": "Neighborhood-first discovery. Lush imagery of fresh produce. Sticky cart. Search with prominent natural-language placeholder.",
+    "vendor_dashboard": "Command center. Tight grids. Hourly sales chart (Recharts) front and center. Alert bar for low stock. High-density layout.",
+    "admin_dashboard": "Macro-level OS. GMV trends KPI Band. Demand Map side-by-side with Live Order Stream. Simulator controls for testing load.",
+    "architecture_page": "Technical, structural. Monospace heavy. Explains the multi-module hybrid nature. Grid background."
+  },
+  "image_urls": {
+    "groceries_shelves": "https://images.pexels.com/photos/12419503/pexels-photo-12419503.jpeg",
+    "shopkeeper_store": "https://images.pexels.com/photos/36317181/pexels-photo-36317181.jpeg",
+    "fresh_produce_pile": "https://images.unsplash.com/photo-1597362925123-77861d3fbac7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwyfHxmcmVzaCUyMHZlZ2V0YWJsZXMlMjBwcm9kdWNlfGVufDB8fHx8MTc4NDI2MzYzMXww&ixlib=rb-4.1.0&q=85",
+    "spice_market_delhi": "https://images.pexels.com/photos/15741144/pexels-photo-15741144.jpeg",
+    "chennai_street_vendor": "https://images.unsplash.com/photo-1769598248596-145aca23dd7e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHw0fHxjaGVubmFpJTIwY2l0eSUyMHN0cmVldHxlbnwwfHx8fDE3ODQyNjM2MzF8MA&ixlib=rb-4.1.0&q=85",
+    "chennai_carrying_produce": "https://images.unsplash.com/photo-1769598248666-459cbef92e22?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxjaGVubmFpJTIwY2l0eSUyMHN0cmVldHxlbnwwfHx8fDE3ODQyNjM2MzF8MA&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Install required dependencies: framer-motion, lucide-react, recharts, sonner, react-fast-marquee, clsx, tailwind-merge.",
+    "Implement Shadcn UI primitives for tables, forms, dropdowns, but heavily customize them to remove standard 'Vercel' look by applying sharp 1px borders and disabling standard soft shadows.",
+    "Ensure the application strictly follows the multi-module routing: / (landing), /customer, /vendor, /admin.",
+    "Simulate realtime updates with useEffect and setInterval (e.g. randomly updating live stock quantities and order tracking)."
+  ],
+  "universal_guidelines": [
+    "Never use generic AI assistant Emoji characters (like 🤖🧠).",
+    "Never use Inter, Roboto, Lato, or Space Grotesk for headings. Use Cabinet Grotesk.",
+    "Never apply universal 'transition: all'.",
+    "Never center-align the main app container. Do not add '.App { text-align: center; }'.",
+    "Always apply 'data-testid' to key UI elements.",
+    "Do not use complete transparent background in header; use glassmorphism."
+  ]
+}
