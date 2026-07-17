@@ -52,6 +52,9 @@ function ScrollToTop() {
 
 function RequireRole({ role, children }) {
   const { state } = useApp();
+  // Wait for Supabase / localStorage auth to initialize before deciding redirects.
+  // Without this guard, users with valid sessions see a flash to /auth on reload.
+  if (!state.authReady) return null;
   if (!state.session) return <Navigate to={`/auth?role=${role}`} replace />;
   if (state.session.role !== role) return <Navigate to={`/${state.session.role}`} replace />;
   return children;

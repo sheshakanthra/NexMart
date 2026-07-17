@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { buildStores, buildOrders, NEIGHBORHOODS, ORDER_STAGES } from '../data/mock';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { buildStores, buildOrders, ORDER_STAGES } from '../data/mock';
 import { uid } from '../lib/utils';
+import { supabase } from '../lib/supabase';
 
 const AppContext = createContext(null);
 
@@ -8,29 +9,48 @@ const initialStores = buildStores();
 const initialOrders = buildOrders(initialStores);
 
 const initialState = {
-  session: JSON.parse(localStorage.getItem('nm_session') || 'null'),
-  theme: localStorage.getItem('nm_theme') || 'dark',
+  // ── Auth ────────────────────────────────────────────────────────────────
+  // session is always null on startup; restored by Supabase or localStorage
+  // depending on whether Supabase is configured (see AppProvider below).
+  session:   null,
+  authReady: false, // true once auth state is known — guards RequireRole redirects
+
+  // ── UI ──────────────────────────────────────────────────────────────────
+  theme:        localStorage.getItem('nm_theme')        || 'dark',
   neighborhood: localStorage.getItem('nm_neighborhood') || 'T. Nagar',
-  cart: JSON.parse(localStorage.getItem('nm_cart') || '[]'),
-  wishlist: JSON.parse(localStorage.getItem('nm_wishlist') || '[]'),
-  addresses: JSON.parse(localStorage.getItem('nm_addresses') || 'null') || [
+
+  // ── Customer state ──────────────────────────────────────────────────────
+  cart:      JSON.parse(localStorage.getItem('nm_cart')       || '[]'),
+  wishlist:  JSON.parse(localStorage.getItem('nm_wishlist')   || '[]'),
+  addresses: JSON.parse(localStorage.getItem('nm_addresses')  || 'null') || [
     { id: 'a1', label: 'Home', name: 'Arjun R.', phone: '+91 98400 12345', line1: '4B, Second Main Rd', line2: 'Kasturba Nagar', neighborhood: 'Adyar' },
   ],
   profile: JSON.parse(localStorage.getItem('nm_profile') || 'null') || { name: 'Arjun R.', email: 'arjun@nexmart.demo', phone: '+91 98400 12345' },
-  stores: initialStores,
-  orders: initialOrders,
+
+  // ── Mock data (replaced per-domain in future phases) ────────────────────
+  stores:  initialStores,
+  orders:  initialOrders,
+
+  // ── Notifications ────────────────────────────────────────────────────────
   notifications: [],
+
+  // ── Simulator ────────────────────────────────────────────────────────────
   simulator: { on: false, intensity: 'normal', generated: 0 },
 };
 
 function reducer(state, action) {
   switch (action.type) {
+    // ── Auth ──────────────────────────────────────────────────────────────
     case 'SET_SESSION': return { ...state, session: action.payload };
-    case 'SET_THEME':   return { ...state, theme: action.payload };
-    case 'SET_NEIGHBORHOOD': return { ...state, neighborhood: action.payload };
-    case 'SET_PROFILE': return { ...state, profile: { ...state.profile, ...action.payload } };
-    case 'SET_ADDRESSES': return { ...state, addresses: action.payload };
+    case 'AUTH_READY':  return { ...state, authReady: true };
 
+    // ── UI ────────────────────────────────────────────────────────────────
+    case 'SET_THEME':        return { ...state, theme: action.payload };
+    case 'SET_NEIGHBORHOOD': return { ...state, neighborhood: action.payload };
+    case 'SET_PROFILE':      return { ...state, profile: { ...state.profile, ...action.payload } };
+    case 'SET_ADDRESSES':    return { ...state, addresses: action.payload };
+
+    // ── Cart ──────────────────────────────────────────────────────────────
     case 'CART_ADD': {
       const { productId, storeId, name, price, unit, img, qty = 1 } = action.payload;
       const idx = state.cart.findIndex(i => i.productId === productId);
@@ -50,11 +70,13 @@ function reducer(state, action) {
     case 'CART_CLEAR':
       return { ...state, cart: [] };
 
+    // ── Wishlist ──────────────────────────────────────────────────────────
     case 'WISHLIST_TOGGLE': {
       const has = state.wishlist.includes(action.payload);
       return { ...state, wishlist: has ? state.wishlist.filter(x => x !== action.payload) : [...state.wishlist, action.payload] };
     }
 
+    // ── Products / Stock ──────────────────────────────────────────────────
     case 'UPDATE_STOCK': {
       const { storeId, productId, stock } = action.payload;
       return {
@@ -90,6 +112,7 @@ function reducer(state, action) {
       };
     }
 
+    // ── Orders ────────────────────────────────────────────────────────────
     case 'ADD_ORDER':
       return { ...state, orders: [action.payload, ...state.orders] };
     case 'UPDATE_ORDER': {
@@ -97,11 +120,13 @@ function reducer(state, action) {
       return { ...state, orders: state.orders.map(o => o.id === id ? { ...o, ...patch } : o) };
     }
 
+    // ── Stores ────────────────────────────────────────────────────────────
     case 'UPDATE_STORE': {
       const { storeId, patch } = action.payload;
       return { ...state, stores: state.stores.map(s => s.id === storeId ? { ...s, ...patch } : s) };
     }
 
+    // ── Notifications ─────────────────────────────────────────────────────
     case 'NOTIFY': {
       const n = { id: uid('n'), createdAt: Date.now(), read: false, ...action.payload };
       return { ...state, notifications: [n, ...state.notifications].slice(0, 50) };
@@ -111,6 +136,7 @@ function reducer(state, action) {
     case 'NOTIF_CLEAR':
       return { ...state, notifications: [] };
 
+    // ── Simulator ─────────────────────────────────────────────────────────
     case 'SIM_SET':
       return { ...state, simulator: { ...state.simulator, ...action.payload } };
 
@@ -119,27 +145,134 @@ function reducer(state, action) {
   }
 }
 
+// ─── Module-level helper (not a hook) ────────────────────────────────────────
+// Fetches the profile row from Supabase and shapes it into the session object
+// the rest of the frontend expects: { id, role, name, email, phone, storeId }.
+async function resolveProfileSession(supabaseSession) {
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id, role, full_name, email, phone, store_id')
+      .eq('id', supabaseSession.user.id)
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id:      supabaseSession.user.id,
+      email:   profile.email      || supabaseSession.user.email,
+      role:    profile.role       || 'customer',
+      name:    profile.full_name  || supabaseSession.user.email?.split('@')[0] || 'User',
+      phone:   profile.phone      || null,
+      storeId: profile.store_id   || null,
+    };
+  } catch {
+    // Profile row doesn't exist yet (trigger hasn't run) — fall back to auth metadata
+    const meta = supabaseSession.user.user_metadata || {};
+    return {
+      id:      supabaseSession.user.id,
+      email:   supabaseSession.user.email,
+      role:    meta.role      || 'customer',
+      name:    meta.full_name || supabaseSession.user.email?.split('@')[0] || 'User',
+      phone:   null,
+      storeId: null,
+    };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [toasts, setToasts] = useState([]);
 
-  // Persist select slices
-  useEffect(() => { localStorage.setItem('nm_cart', JSON.stringify(state.cart)); }, [state.cart]);
-  useEffect(() => { localStorage.setItem('nm_wishlist', JSON.stringify(state.wishlist)); }, [state.wishlist]);
-  useEffect(() => { localStorage.setItem('nm_session', JSON.stringify(state.session)); }, [state.session]);
-  useEffect(() => { localStorage.setItem('nm_theme', state.theme); document.documentElement.classList.toggle('dark', state.theme === 'dark'); }, [state.theme]);
-  useEffect(() => { localStorage.setItem('nm_neighborhood', state.neighborhood); }, [state.neighborhood]);
-  useEffect(() => { localStorage.setItem('nm_addresses', JSON.stringify(state.addresses)); }, [state.addresses]);
-  useEffect(() => { localStorage.setItem('nm_profile', JSON.stringify(state.profile)); }, [state.profile]);
+  // ── Track whether the active session came from Supabase (vs. one-tap demo) ─
+  const isSupabaseSession = useRef(false);
 
-  // Toasts
+  // ── Auth initialization ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) {
+      // No Supabase configured — restore legacy mock session from localStorage
+      const saved = JSON.parse(localStorage.getItem('nm_session') || 'null');
+      if (saved) dispatch({ type: 'SET_SESSION', payload: saved });
+      dispatch({ type: 'AUTH_READY' });
+      return;
+    }
+
+    let mounted = true;
+
+    // Restore an existing Supabase session (handles page refresh / returning user)
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+      if (session) {
+        const profile = await resolveProfileSession(session);
+        if (!mounted) return;
+        isSupabaseSession.current = true;
+        dispatch({ type: 'SET_SESSION', payload: profile });
+      }
+      dispatch({ type: 'AUTH_READY' });
+    });
+
+    // Subscribe to future auth state changes (sign-in, sign-out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session) {
+        const profile = await resolveProfileSession(session);
+        if (!mounted) return;
+        isSupabaseSession.current = true;
+        dispatch({ type: 'SET_SESSION', payload: profile });
+        dispatch({ type: 'AUTH_READY' });
+      } else if (event === 'SIGNED_OUT') {
+        isSupabaseSession.current = false;
+        dispatch({ type: 'SET_SESSION', payload: null });
+      }
+      // TOKEN_REFRESHED: Supabase handles transparently — no state change needed
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sync logout: when session is cleared locally, sign out of Supabase ────
+  // Pages dispatch SET_SESSION → null directly (Profile, VendorSettings, AdminSettings).
+  // This effect detects that and mirrors it to Supabase.
+  useEffect(() => {
+    if (!state.authReady || !supabase) return;
+    if (state.session === null && isSupabaseSession.current) {
+      isSupabaseSession.current = false;
+      supabase.auth.signOut().catch(console.error);
+    }
+  }, [state.session, state.authReady]);
+
+  // ── Expose signOut as a first-class action (used by page logout buttons) ──
+  const signOut = useCallback(async () => {
+    if (supabase && isSupabaseSession.current) {
+      isSupabaseSession.current = false;
+      await supabase.auth.signOut().catch(console.error);
+    }
+    dispatch({ type: 'SET_SESSION', payload: null });
+  }, []);
+
+  // ── Persist select slices to localStorage ────────────────────────────────
+  useEffect(() => { localStorage.setItem('nm_session',      JSON.stringify(state.session));   }, [state.session]);
+  useEffect(() => { localStorage.setItem('nm_cart',         JSON.stringify(state.cart));       }, [state.cart]);
+  useEffect(() => { localStorage.setItem('nm_wishlist',     JSON.stringify(state.wishlist));   }, [state.wishlist]);
+  useEffect(() => { localStorage.setItem('nm_theme',        state.theme); document.documentElement.classList.toggle('dark', state.theme === 'dark'); }, [state.theme]);
+  useEffect(() => { localStorage.setItem('nm_neighborhood', state.neighborhood);               }, [state.neighborhood]);
+  useEffect(() => { localStorage.setItem('nm_addresses',    JSON.stringify(state.addresses));  }, [state.addresses]);
+  useEffect(() => { localStorage.setItem('nm_profile',      JSON.stringify(state.profile));    }, [state.profile]);
+
+  // ── Toast helper ─────────────────────────────────────────────────────────
   const toast = (opts) => {
     const t = { id: uid('t'), ...opts };
     setToasts(prev => [...prev, t]);
     setTimeout(() => setToasts(prev => prev.filter(x => x.id !== t.id)), opts.duration || 3200);
   };
 
-  // Realtime simulation loop (stock ticks + order progression + notifications)
+  // ── Realtime simulation loop (stock ticks + order progression + notifications) ─
   const simRef = useRef({ tick: 0 });
   useEffect(() => {
     const id = setInterval(() => {
@@ -198,10 +331,14 @@ export function AppProvider({ children }) {
       }
     }, 3500);
     return () => clearInterval(id);
-    // eslint-disable-next-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.simulator.on, state.simulator.intensity]);
 
-  const value = useMemo(() => ({ state, dispatch, toast, toasts }), [state, toasts]);
+  const value = useMemo(
+    () => ({ state, dispatch, toast, toasts, signOut }),
+    [state, toasts, signOut]
+  );
+
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 

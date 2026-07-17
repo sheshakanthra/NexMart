@@ -7,7 +7,7 @@ import { NEIGHBORHOODS } from '../../data/mock';
 import { uid } from '../../lib/utils';
 
 export default function Profile() {
-  const { state, dispatch, toast } = useApp();
+  const { state, dispatch, toast, signOut } = useApp();
   const nav = useNavigate();
   const [profile, setProfile] = useState(state.profile);
   const [addrOpen, setAddrOpen] = useState(false);
@@ -18,8 +18,8 @@ export default function Profile() {
     toast({ title: 'Profile updated', kind: 'success' });
   };
 
-  const logout = () => {
-    dispatch({ type: 'SET_SESSION', payload: null });
+  const logout = async () => {
+    await signOut();
     nav('/');
   };
 

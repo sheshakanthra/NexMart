@@ -4,10 +4,10 @@ import { LogOut, Sun, Moon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function AdminSettings() {
-  const { state, dispatch, toast } = useApp();
+  const { state, dispatch, toast, signOut } = useApp();
   const nav = useNavigate();
   const [cfg, setCfg] = useState({ commissionPct: 8, deliveryFee: 25, autoApprove: false });
-  const logout = () => { dispatch({ type: 'SET_SESSION', payload: null }); nav('/'); };
+  const logout = async () => { await signOut(); nav('/'); };
 
   return (
     <div className="max-w-3xl space-y-5" data-testid="admin-settings">

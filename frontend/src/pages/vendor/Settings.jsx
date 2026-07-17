@@ -4,11 +4,11 @@ import { LogOut, Sun, Moon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function VendorSettings() {
-  const { state, dispatch, toast } = useApp();
+  const { state, dispatch, toast, signOut } = useApp();
   const nav = useNavigate();
   const [prefs, setPrefs] = useState({ orderAlerts: true, lowStockAlerts: true, weeklyBrief: true, defaultThreshold: 5 });
 
-  const logout = () => { dispatch({ type: 'SET_SESSION', payload: null }); nav('/'); };
+  const logout = async () => { await signOut(); nav('/'); };
 
   return (
     <div className="max-w-3xl space-y-5" data-testid="vendor-settings">

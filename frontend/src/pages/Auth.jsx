@@ -1,30 +1,43 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ShoppingBag, Store, Shield, Sparkles } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import * as authService from '../services/authService';
 
 const DEMO_USERS = {
-  customer: { role: 'customer', name: 'Arjun R.', email: 'arjun@nexmart.demo' },
-  vendor:   { role: 'vendor', name: 'Krishnan R.', email: 'krishnan@nexmart.demo', storeId: 's_0' },
-  admin:    { role: 'admin', name: 'Priya Admin', email: 'priya@nexmart.admin' },
+  customer: { role: 'customer', name: 'Arjun R.',    email: 'arjun@nexmart.demo' },
+  vendor:   { role: 'vendor',   name: 'Krishnan R.', email: 'krishnan@nexmart.demo', storeId: 's_0' },
+  admin:    { role: 'admin',    name: 'Priya Admin',  email: 'priya@nexmart.admin' },
 };
 
 export default function Auth() {
   const [params] = useSearchParams();
   const initialRole = params.get('role') || 'customer';
-  const initialTab = params.get('tab') === 'signup' ? 'signup' : 'login';
-  const [tab, setTab] = useState(initialTab);
-  const [role, setRole] = useState(initialRole);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
-  const [errors, setErrors] = useState({});
-  const { dispatch, toast } = useApp();
+  const initialTab  = params.get('tab') === 'signup' ? 'signup' : 'login';
+
+  const [tab,        setTab]        = useState(initialTab);
+  const [role,       setRole]       = useState(initialRole);
+  const [form,       setForm]       = useState({ name: '', email: '', password: '' });
+  const [errors,     setErrors]     = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [authError,  setAuthError]  = useState(null);
+
+  const { state, dispatch, toast } = useApp();
   const nav = useNavigate();
 
+  // Navigate automatically once auth is ready and session is established.
+  // Handles both real Supabase sign-in (async onAuthStateChange) and one-tap demo.
+  useEffect(() => {
+    if (state.authReady && state.session) {
+      nav(`/${state.session.role}`, { replace: true });
+    }
+  }, [state.session, state.authReady, nav]);
+
+  // One-tap demo — sets a local mock session (no Supabase call)
   const oneTap = (r) => {
     const u = DEMO_USERS[r];
     dispatch({ type: 'SET_SESSION', payload: u });
     toast({ title: `Signed in as ${r}`, kind: 'success' });
-    nav(`/${r}`);
   };
 
   const validate = (mode) => {
@@ -36,14 +49,38 @@ export default function Auth() {
     return Object.keys(e).length === 0;
   };
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!validate(tab)) return;
-    const u = DEMO_USERS[role];
-    const merged = { ...u, name: tab === 'signup' ? form.name : u.name, email: form.email };
-    dispatch({ type: 'SET_SESSION', payload: merged });
-    toast({ title: tab === 'signup' ? 'Account created' : 'Welcome back', body: form.email, kind: 'success' });
-    nav(`/${role}`);
+
+    setSubmitting(true);
+    setAuthError(null);
+
+    try {
+      if (tab === 'login') {
+        await authService.signIn({ email: form.email, password: form.password });
+        // onAuthStateChange in AppContext dispatches SET_SESSION → useEffect above navigates
+      } else {
+        const result = await authService.signUp({
+          email:    form.email,
+          password: form.password,
+          name:     form.name,
+          role,
+        });
+        if (!result?.data?.session) {
+          // Supabase email confirmation is enabled — user must verify before signing in
+          toast({ title: 'Check your email', body: 'Verify your address to complete sign-up.', kind: 'info' });
+          setSubmitting(false);
+          return;
+        }
+        // Auto-confirmed: onAuthStateChange fires and navigates
+      }
+      toast({ title: tab === 'login' ? 'Welcome back' : 'Account created', body: form.email, kind: 'success' });
+    } catch (err) {
+      setAuthError(err?.message ?? 'Authentication failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -104,8 +141,14 @@ export default function Auth() {
                 className="input" placeholder="••••••••" data-testid="auth-password" />
               {errors.password && <p className="text-danger text-xs mt-1">{errors.password}</p>}
             </div>
-            <button type="submit" className="btn btn-primary w-full justify-center h-11" data-testid="auth-submit">
-              {tab === 'login' ? 'Sign in' : 'Create account'} <ArrowRight size={14}/>
+
+            {authError && (
+              <p className="text-danger text-sm py-2 px-3 rounded bg-danger/10 border border-danger/20">{authError}</p>
+            )}
+
+            <button type="submit" className="btn btn-primary w-full justify-center h-11" data-testid="auth-submit" disabled={submitting}>
+              {submitting ? 'Please wait…' : (tab === 'login' ? 'Sign in' : 'Create account')}
+              {!submitting && <ArrowRight size={14}/>}
             </button>
           </form>
 
@@ -125,10 +168,10 @@ export default function Auth() {
             <div className="label-mono mb-3 flex items-center gap-2"><Sparkles size={12}/> Explore as</div>
             <div className="grid grid-cols-3 gap-2">
               <button onClick={() => oneTap('customer')} className="btn btn-ghost h-10 justify-center" data-testid="onetap-customer"><ShoppingBag size={14}/>Customer</button>
-              <button onClick={() => oneTap('vendor')} className="btn btn-ghost h-10 justify-center" data-testid="onetap-vendor"><Store size={14}/>Vendor</button>
-              <button onClick={() => oneTap('admin')} className="btn btn-ghost h-10 justify-center" data-testid="onetap-admin"><Shield size={14}/>Admin</button>
+              <button onClick={() => oneTap('vendor')}   className="btn btn-ghost h-10 justify-center" data-testid="onetap-vendor"><Store size={14}/>Vendor</button>
+              <button onClick={() => oneTap('admin')}    className="btn btn-ghost h-10 justify-center" data-testid="onetap-admin"><Shield size={14}/>Admin</button>
             </div>
-            <p className="text-[11px] text-sub mt-2 font-mono">No real authentication. Mock session persists locally.</p>
+            <p className="text-[11px] text-sub mt-2 font-mono">Demo mode — mock session, no real account needed.</p>
           </div>
         </div>
 
